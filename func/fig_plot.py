@@ -1,3 +1,4 @@
+# (KUO) 2022/Jun/8
 import numpy as np
 import matplotlib.pyplot as plt
 def cal_far_frr(garr, iarr, resolu=2000):
