@@ -92,3 +92,4 @@ def cal_hamming(featDir_G, featDir_P, maskDir_G, maskDir_P, batch=350):
                 for j in range(len(scoresTemp)):
                     scoresTemp[j,:] = np.roll(scoresTemp[j,:], j)
                 scores[ga*batch:min((ga+1)*batch, featG.shape[2]), pr*batch:min((pr+1)*batch, featP.shape[2])] = scoresTemp.T
+            return scores, maskRates
