@@ -2,3 +2,6 @@
 *.[oa]
 *~
 Data/*
+*.pyc
+*.ipynb
+Result/*
