@@ -4,9 +4,9 @@ import numpy as np
 from tqdm import tqdm
 from func.cal_dist import cal_hamming, get_label
 from func.fig_plot import plot_roc
-featDir = './Data/QFIRE/Feat'
-maskDir = './Data/QFIRE/Mask'
-resultDir = './Result/QFIRE'
+featDir = './Data/CASIA/Feat'
+maskDir = './Data/CASIA/Mask'
+resultDir = './Result/CASIA'
 if not os.path.isdir(resultDir):
     os.makedirs(resultDir)
 iters = os.listdir(featDir)
@@ -21,4 +21,4 @@ for it in tqdm(iters):
     ii = np.array(scores[labelMat==-1])
     result = plot_roc(gg, ii, os.path.join(resultDir, it+'_roc.png'))
     results[it] = result
-    
+sio.savemat('result.mat', {'results':results})
