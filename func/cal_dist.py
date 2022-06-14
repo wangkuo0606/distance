@@ -54,61 +54,73 @@ def get_label(gallery, probe, type, lr=-1):
     for ig, gg in enumerate(labelG):
         for ip, pp in enumerate(labelP):
             labelMat[ig, ip] = 1 if gg==pp else -1
+    labelMat[np.eye(len(labelG), dtype=np.bool)] = 0 
     return labelG, labelP, labelMat
 
 
-def cal_hamming(featDir_G, featDir_P, maskDir_G, maskDir_P, batch=200):
+def cal_hamming(featDir_G, featDir_P, maskDir_G, maskDir_P, batch=200, fold = 1):
     assert torch.cuda.is_available()
-    featG, maskG = get_fm(featDir_G, maskDir_G)
-    featP, maskP = get_fm(featDir_P, maskDir_P)
-    featG = rotate_map(featG)
-    maskG = rotate_map(maskG)
-    featP = repeat_map(featP)
-    maskP = repeat_map(maskP)
-    scores = torch.zeros((featG.shape[2], featP.shape[2])).cuda()
-    mrates = torch.zeros((featG.shape[2], featP.shape[2])).cuda()
+    featGAll, maskGAll = get_fm(featDir_G, maskDir_G)
+    featPAll, maskPAll = get_fm(featDir_P, maskDir_P)
+    batchsize = featGAll.shape[2]//fold+1
+    scoresAll = torch.zeros((featGAll.shape[2], featPAll.shape[2])).cuda()
+    mratesAll = torch.zeros((featGAll.shape[2], featPAll.shape[2])).cuda()
+    for folddiv in range(fold):
+        featG = featGAll[..., folddiv*batchsize:min(featGAll.shape[2], (folddiv+1)*batchsize)].copy()
+        maskG = maskGAll[..., folddiv*batchsize:min(maskGAll.shape[2], (folddiv+1)*batchsize)].copy()
+        featG = rotate_map(featG)
+        maskG = rotate_map(maskG)
+        for folddivP in range(fold):
+            featP = featPAll[..., folddivP*batchsize:min(featPAll.shape[2], (folddivP+1)*batchsize)].copy()
+            maskP = maskPAll[..., folddivP*batchsize:min(maskPAll.shape[2], (folddivP+1)*batchsize)].copy()
+            featP = repeat_map(featP)
+            maskP = repeat_map(maskP)
+            scores = torch.zeros((featG.shape[2], featP.shape[2])).cuda()
+            mrates = torch.zeros((featG.shape[2], featP.shape[2])).cuda()
 
-    for ga in tqdm(range(featG.shape[2]//batch+1)):
-        for pr in range(featP.shape[2]//batch+1):
-            featGT = torch.from_numpy(featG[...,ga*batch:min((ga+1)*batch, featG.shape[2])]).cuda() # gallery feat tensor
-            featPT = torch.from_numpy(featP[...,pr*batch:min((pr+1)*batch, featP.shape[2])]).cuda() # probe feat tensor           
-            maskGT = torch.from_numpy(maskG[...,ga*batch:min((ga+1)*batch, maskG.shape[2])]).cuda() # gallery mask tensor
-            maskPT = torch.from_numpy(maskP[...,pr*batch:min((pr+1)*batch, maskP.shape[2])]).cuda() # probe mask tensor
+            for ga in tqdm(range(featG.shape[2]//batch+1)):
+                for pr in range(featP.shape[2]//batch+1):
+                    featGT = torch.from_numpy(featG[...,ga*batch:min((ga+1)*batch, featG.shape[2])]).cuda() # gallery feat tensor
+                    featPT = torch.from_numpy(featP[...,pr*batch:min((pr+1)*batch, featP.shape[2])]).cuda() # probe feat tensor           
+                    maskGT = torch.from_numpy(maskG[...,ga*batch:min((ga+1)*batch, maskG.shape[2])]).cuda() # gallery mask tensor
+                    maskPT = torch.from_numpy(maskP[...,pr*batch:min((pr+1)*batch, maskP.shape[2])]).cuda() # probe mask tensor
 
-            assert featGT.shape == maskGT.shape
-            assert featPT.shape == maskPT.shape
+                    assert featGT.shape == maskGT.shape
+                    assert featPT.shape == maskPT.shape
 
-            if featGT.shape[2] == 0 or featPT.shape[2] == 0:
-                continue
-            if featPT.shape[2] > featGT.shape[2]:
-                scoresTemp = torch.zeros((featGT.shape[2], featPT.shape[2]))
-                mratesTemp = torch.zeros((featGT.shape[2], featPT.shape[2]))
-                for i in range(featPT.shape[2]):
-                    tempMask = torch.bitwise_and(torch.roll(maskPT, -i, 2)[...,:maskGT.shape[2]], maskGT)
-                    tempDist = torch.bitwise_and(torch.bitwise_xor(featGT, torch.roll(featPT,-i,2)[...,:featGT.shape[2]]), tempMask)
-                    tempMsum = torch.sum(tempMask, 1)
-                    tempScore = torch.min(torch.sum(tempDist, 1)/tempMsum, 0, True)
-                    scoresTemp[:,i] = tempScore.values.squeeze()
-                    mratesTemp[:,i] = torch.gather(tempMsum, 0, tempScore.indices).squeeze()
-                for j in range(len(scoresTemp)):
-                    scoresTemp[j,:] = torch.roll(scoresTemp[j,:], j)
-                    mratesTemp[j,:] = torch.roll(mratesTemp[j,:], j)
-                scores[ga*batch:min((ga+1)*batch, featG.shape[2]), pr*batch:min((pr+1)*batch, featP.shape[2])] = scoresTemp
-                mrates[ga*batch:min((ga+1)*batch, featG.shape[2]), pr*batch:min((pr+1)*batch, featP.shape[2])] = mratesTemp
-            else:
-                scoresTemp = torch.zeros((featPT.shape[2], featGT.shape[2])).cuda()
-                mratesTemp = torch.zeros((featPT.shape[2], featGT.shape[2])).cuda()
-                for i in range(maskGT.shape[2]):
-                    tempMask = torch.bitwise_and(torch.roll(maskGT, -i, 2)[...,:maskPT.shape[2]], maskPT)
-                    tempDist = torch.bitwise_and(torch.bitwise_xor(featPT, torch.roll(featGT,-i,2)[...,:featPT.shape[2]]), tempMask)
-                    tempMsum = torch.sum(tempMask, 1)
-                    tempScore = torch.min(torch.sum(tempDist, 1)/tempMsum, 0, True)
-                    scoresTemp[:,i] = tempScore.values.squeeze()
-                    mratesTemp[:,i] = torch.gather(tempMsum, 0, tempScore.indices).squeeze()
-                for j in range(len(scoresTemp)):
-                    scoresTemp[j,:] = torch.roll(scoresTemp[j,:], j)
-                    mratesTemp[j,:] = torch.roll(mratesTemp[j,:], j)
-                scores[ga*batch:min((ga+1)*batch, featG.shape[2]), pr*batch:min((pr+1)*batch, featP.shape[2])] = scoresTemp.transpose(0,1)
-                mrates[ga*batch:min((ga+1)*batch, featG.shape[2]), pr*batch:min((pr+1)*batch, featP.shape[2])] = mratesTemp.transpose(0,1)
-
-    return scores.cpu().numpy(), mrates.cpu().numpy()/featG.shape[1]
+                    if featGT.shape[2] == 0 or featPT.shape[2] == 0:
+                        continue
+                    if featPT.shape[2] > featGT.shape[2]:
+                        scoresTemp = torch.zeros((featGT.shape[2], featPT.shape[2])).cuda()
+                        mratesTemp = torch.zeros((featGT.shape[2], featPT.shape[2])).cuda()
+                        for i in range(featPT.shape[2]):
+                            tempMask = torch.bitwise_and(torch.roll(maskPT, -i, 2)[...,:maskGT.shape[2]], maskGT)
+                            tempDist = torch.bitwise_and(torch.bitwise_xor(featGT, torch.roll(featPT,-i,2)[...,:featGT.shape[2]]), tempMask)
+                            tempMsum = torch.sum(tempMask, 1)
+                            tempScore = torch.min(torch.sum(tempDist, 1)/tempMsum, 0, True)
+                            scoresTemp[:,i] = tempScore.values.squeeze()
+                            mratesTemp[:,i] = torch.gather(tempMsum, 0, tempScore.indices).squeeze()
+                        for j in range(len(scoresTemp)):
+                            scoresTemp[j,:] = torch.roll(scoresTemp[j,:], j)
+                            mratesTemp[j,:] = torch.roll(mratesTemp[j,:], j)
+                        scores[ga*batch:min((ga+1)*batch, featG.shape[2]), pr*batch:min((pr+1)*batch, featP.shape[2])] = scoresTemp
+                        mrates[ga*batch:min((ga+1)*batch, featG.shape[2]), pr*batch:min((pr+1)*batch, featP.shape[2])] = mratesTemp
+                    else:
+                        scoresTemp = torch.zeros((featPT.shape[2], featGT.shape[2])).cuda()
+                        mratesTemp = torch.zeros((featPT.shape[2], featGT.shape[2])).cuda()
+                        for i in range(maskGT.shape[2]):
+                            tempMask = torch.bitwise_and(torch.roll(maskGT, -i, 2)[...,:maskPT.shape[2]], maskPT)
+                            tempDist = torch.bitwise_and(torch.bitwise_xor(featPT, torch.roll(featGT,-i,2)[...,:featPT.shape[2]]), tempMask)
+                            tempMsum = torch.sum(tempMask, 1)
+                            tempScore = torch.min(torch.sum(tempDist, 1)/tempMsum, 0, True)
+                            scoresTemp[:,i] = tempScore.values.squeeze()
+                            mratesTemp[:,i] = torch.gather(tempMsum, 0, tempScore.indices).squeeze()
+                        for j in range(len(scoresTemp)):
+                            scoresTemp[j,:] = torch.roll(scoresTemp[j,:], j)
+                            mratesTemp[j,:] = torch.roll(mratesTemp[j,:], j)
+                        scores[ga*batch:min((ga+1)*batch, featG.shape[2]), pr*batch:min((pr+1)*batch, featP.shape[2])] = scoresTemp.transpose(0,1)
+                        mrates[ga*batch:min((ga+1)*batch, featG.shape[2]), pr*batch:min((pr+1)*batch, featP.shape[2])] = mratesTemp.transpose(0,1)
+            scoresAll[folddiv*batchsize:min(featGAll.shape[2], (folddiv+1)*batchsize), folddivP*batchsize:min(maskPAll.shape[2], (folddivP+1)*batchsize)] = scores
+            mratesAll[folddiv*batchsize:min(featGAll.shape[2], (folddiv+1)*batchsize), folddivP*batchsize:min(maskPAll.shape[2], (folddivP+1)*batchsize)] = mrates
+            
+    return scoresAll.cpu().numpy(), mratesAll.cpu().numpy()/featGAll.shape[1]

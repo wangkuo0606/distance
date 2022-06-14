@@ -4,9 +4,9 @@ import numpy as np
 from tqdm import tqdm
 from func.cal_dist import cal_hamming, get_label
 from func.fig_plot import plot_roc
-featDir = './Data/CASIA/Feat'
-maskDir = './Data/CASIA/Mask'
-resultDir = './Result/CASIA/U2'
+featDir = './Data/Ordinal/CASIA/Feat'
+maskDir = './Data/Ordinal/CASIA/Mask'
+resultDir = './Result/CASIA/Ordinal'
 if not os.path.isdir(resultDir):
     os.makedirs(resultDir+'/score')
     os.makedirs(resultDir+'/figure')
