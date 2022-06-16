@@ -54,7 +54,8 @@ def get_label(gallery, probe, type, lr=-1):
     for ig, gg in enumerate(labelG):
         for ip, pp in enumerate(labelP):
             labelMat[ig, ip] = 1 if gg==pp else -1
-    labelMat[np.eye(len(labelG), dtype=np.bool)] = 0 
+    if gallery == probe:
+        labelMat[np.eye(len(labelG), dtype=np.bool)] = 0 
     return labelG, labelP, labelMat
 
 
@@ -62,7 +63,7 @@ def cal_hamming(featDir_G, featDir_P, maskDir_G, maskDir_P, batch=200, fold = 1)
     assert torch.cuda.is_available()
     featGAll, maskGAll = get_fm(featDir_G, maskDir_G)
     featPAll, maskPAll = get_fm(featDir_P, maskDir_P)
-    batchsize = featGAll.shape[2]//fold+1
+    batchsize = max(featGAll.shape[2]//fold+1, featPAll.shape[2]//fold+1) 
     scoresAll = torch.zeros((featGAll.shape[2], featPAll.shape[2])).cuda()
     mratesAll = torch.zeros((featGAll.shape[2], featPAll.shape[2])).cuda()
     for folddiv in range(fold):
